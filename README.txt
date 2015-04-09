@@ -1,6 +1,7 @@
 DBN trained on multilingual SBS data can be found in: 
 exp/dnn4_pretrain-dbn/6.dbn (binary)
-exp/dnn4_pretrain-dbn/6.dbn.txt (ascii, converted using nnet-copy  --binary=false 6.dbn 6.dbn.txt)
+exp/dnn4_pretrain-dbn/6.dbn.txt.gz (ascii gzipped) 
+bin -> ascii: nnet-copy  --binary=false 6.dbn 6.dbn.txt
 
 
 Multilingual SBS data:
