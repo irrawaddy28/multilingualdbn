@@ -4,6 +4,8 @@
 cmvn_optsf=
 delta_optsf=
 splice_optsf=
+use_mfcc=true
+use_pitch=false
 #desired_lang="albanian  bangla   cookislands-maori  dinka     finnish   hebrew      italian   kurdish     malay      norwegian      punjabi   sinhalese  swahili   tongan
 #amharic   bosnian    croatian    dutch     french    hindi       japanese  lao         malayalam  pashto         romanian  slovak     swedish   turkish
 #arabic    bulgarian  czech    estonian  german    hmong       kannada   latvian     maltese    persian-farsi  russian   slovenian  tamil     ukrainian
@@ -25,9 +27,11 @@ if [ $# != 1 ]; then
   echo "  --config <config-file>                           # config containing options"
   echo "  --nj <nj>                                        # number of parallel jobs"
   echo "  --cmd (utils/run.pl|utils/queue.pl <queue opts>) # how to run jobs."
-  echo "  --cmvn-optsf <cmvn-opts file>                     # cmvn opts file. "
-  echo "  --delta-optsf <delta-opts file>                   # delta-opts file. "
-  echo "  --splice-optsf <splice-opts file>                 # splice-opts file. "
+  echo "  --use-mfcc <bool>                                # if true, generate mfcc features. otherwise, plp based "
+  echo "  --use-pitch <bool>                               # if true, generate plp + pitch features. otherwise, plp only (no pitch)"
+  echo "  --cmvn-optsf <cmvn-opts file>                    # cmvn opts file. "
+  echo "  --delta-optsf <delta-opts file>                  # delta-opts file. "
+  echo "  --splice-optsf <splice-opts file>                # splice-opts file. "
   exit 1;
 fi
 
@@ -36,7 +40,7 @@ fi
 set -e
 stage=$1
 
-sbs=$corpus_dir/www.sbs.com.au/seg2
+sbs=$corpus_dir/www.sbs.com.au
 wsj0=$corpus_dir/wsj/wsj0
 wsj1=$corpus_dir/wsj/wsj1
 #music=$corpus_dir/music/wav_mono
@@ -45,24 +49,49 @@ mfccdir=`pwd`/mfcc
 vaddir=`pwd`/mfcc
 dir=exp/config
 
+$use_pitch && use_mfcc=false
+$use_mfcc && use_pitch=false
 
 if [ $stage -eq 1 ]; then
 # data prep
 echo "Data preparation ..."
-local/make_sbs.sh $sbs data/sbs # sbs has about 1130 hours of data
+local/make_sbs.sh $sbs/seg2 $sbs/lists data/sbs # sbs has about 1130 hours of data
 #local/make_wsj.sh $wsj0/??-{?,??}.? $wsj1/??-{?,??}.? data/english
 
 utils/combine_data.sh data/train_all data/sbs
-#utils/combine_data.sh data/train data/sbs data/english 
+#utils/combine_data.sh data/train data/sbs data/english
+
+## Get a smaller subset of training data: 
+## What is -per-spk selection method? It selects an utt from spk2utt file 
+## once every SKIP_SIZE utterances. Therefore, the selection of utts is
+## like sampling uniformly in spk2utt file.
+## How many utts does -per-spk select? N (2nd arg supplied to utils/subset_data_dir.sh.)
+## How is SKIP_SIZE determined? N*SKIP_SIZE = # of utts in spk2utt 
+## In sbs, spkid is the same as langid and we set N = 720.
+## Hence, -per-spk option selects 720 utts per language. 
+## Why N = 720?  720 utts is 1 hr of audio since each SBS utt is 5s long.
+utils/subset_data_dir.sh --per-spk data/train_all 720 data/train
 fi
 
 if [ $stage -eq 2 ]; then
 # Generate features
 echo "Feature generation ... "
-steps/make_mfcc.sh --mfcc-config conf/mfcc.conf --nj 40 --cmd "$train_cmd" \
-    data/train_all exp/make_mfcc $mfccdir
-    
-steps/compute_cmvn_stats.sh data/train_all exp/make_mfcc $mfccdir    
+
+if $use_mfcc; then
+ steps/make_mfcc.sh --mfcc-config conf/mfcc.conf --nj 40 --cmd "$train_cmd" \
+    data/train exp/make_mfcc $mfccdir
+ utils/fix_data_dir.sh data/train   
+ steps/compute_cmvn_stats.sh data/train exp/make_mfcc/train mfcc   
+elif $use_pitch; then
+ steps/make_plp_pitch.sh --cmd "$train_cmd" --nj 40 data/train exp/make_plp_pitch/train plp
+ utils/fix_data_dir.sh data/train
+ steps/compute_cmvn_stats.sh data/train exp/make_plp_pitch/train plp
+else
+ steps/make_plp.sh --cmd "$train_cmd" --nj 40 data/train exp/make_plp/train plp
+ utils/fix_data_dir.sh data/train
+ steps/compute_cmvn_stats.sh data/train exp/make_plp/train plp
+fi
+utils/fix_data_dir.sh data/train
 
 #sid/compute_vad_decision.sh --nj 4 --cmd "$train_cmd" \
 #    data/train exp/make_vad $vaddir
@@ -73,9 +102,6 @@ fi
 
 if [ $stage -eq 3 ]; then
 echo "Run DBN pretraining ... "
-
-## Get a smaller subset of training data (15k utts ~ 20 hrs) since we do not need so much of data
-utils/subset_data_dir.sh data/train_all 15000 data/train
 
 echo "Create config options in directory $dir ..."
 [[ ! -d $dir ]] && mkdir -p $dir;

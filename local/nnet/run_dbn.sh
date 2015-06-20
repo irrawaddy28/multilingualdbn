@@ -67,10 +67,10 @@ if [ $stage -le 0 ]; then
   dir=$data_fmllr/train
   [[ ! -z $transform_dir ]] && transform_dir_opt="--transform-dir ${transform_dir}_ali" || transform_dir_opt=""
   steps/nnet/make_fmllr_feats.sh --nj $nj --cmd "$train_cmd" \
-     $transform_dir_opt \
+     --use-delta "true" $transform_dir_opt \
      $dir $srcdatatrain $gmmdir $dir/log $dir/data || exit 1
   # split the data : 90% train 10% cross-validation (held-out)
-  utils/subset_data_dir_tr_cv.sh $dir ${dir}_tr90 ${dir}_cv10 || exit 1
+  # utils/subset_data_dir_tr_cv.sh $dir ${dir}_tr90 ${dir}_cv10 || exit 1
 fi
 
 if [ $stage -le 1 ]; then
